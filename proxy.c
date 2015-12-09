@@ -29,7 +29,7 @@ void handle_connection(int fd, struct request_info *r_info, char *header_buf);
 
 int main(int argc, char **argv)
 {
-    /* variables */
+    /* Variables */
     int listenfd, connfd;
     int *connfd_ptr;
     pthread_t tid;
@@ -40,38 +40,39 @@ int main(int argc, char **argv)
     /* Check command line args */
     if (argc != 2) {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
-    	exit(1);
+        exit(1);
     }
+    /* Block SIGPIPE signal*/
     Signal(SIGPIPE, SIG_IGN);
 
-    /* client length?*/
+    /* Client length */
     listenfd = Open_listenfd(argv[1]);
     while(1) {
         clientlen = sizeof(clientaddr)  ;
         connfd = Accept(listenfd, (SA *) &clientaddr, &clientlen);
 
-        /* parse arguments */
+        /* Parse connection's fd to threads */
         connfd_ptr = malloc(sizeof(void *)); 
         *connfd_ptr = connfd;
         Pthread_create(&tid, NULL, doit, connfd_ptr);
-        //Getnameinfo((SA *) &clientaddr, clientlen, hostname,MAXLINE, port, MAXLINE, 0);
-        //printf("Accepted connection: (%s, %s)\n", hostname, port);
-        //doit(connfd);
-        //Close(connfd);
     }
 
-/*    printf("%s", user_agent_hdr);*/
 }
 
+
+/*
+ * doit - thread routine to handle each request
+ * It validate the request, check the cache and save cache.
+ * 
+ */
 void *doit(void *connfd_ptr) {
 
     int fd = *(int *) connfd_ptr;
     Pthread_detach(Pthread_self());
-    debugprintf("\n---------New thread run\n");
     Free(connfd_ptr);
+    debugprintf("\n---------New thread run\n");
 
     //pthread_rwlock_init
-
     
     size_t n;
     char buf[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE];
@@ -83,25 +84,31 @@ void *doit(void *connfd_ptr) {
 
     /* Accept each request */
     Rio_readinitb(&rio, fd);
+
     /*Read one line*/
     if (!Rio_readlineb(&rio, buf, MAXLINE))
         return NULL;
 
-    printf("%s", buf);
+    debugprintf("%s", buf);
 
     /* Read remained request header */
     read_requesthdrs(&rio, header_buf);
 
+    /* Check request */
     if (sscanf(buf, "%s %s %s", method, url, version) != 3) {
-        printf("%s\n", "Not 3 request");
+        debugprintf("%s\n", "Not 3 request");
         return NULL;
     }
 
+    /* Validate request and parse infos */
     if (!is_valid(fd, method, url, version, r_info)) {
-        printf("%s\n", "invalid request");
+        debugprintf("%s\n", "invalid request");
+
         clienterror(fd, version, "404", "Not Supported or invalid request",
         "Proxy only support HTTP/1.0 or 1.1 version HTTP");
         printf("invalid request: \n");
+
+        /* Free and close and quit */
         Free(r_info);
         Close(fd);
         return NULL;
@@ -110,50 +117,55 @@ void *doit(void *connfd_ptr) {
         printf("%s\n", "valid reqeust!");
     }
 
-    /* suppose valid here */
-    /* make request */
+    /* Talk to server routine */
     handle_connection(fd, r_info, header_buf);
     Free(r_info);
     Close(fd);
     //Pthread_exit(NULL);
 
     return NULL;
-    /* make response */
 }
 
-void handle_connection(int connfd, struct request_info *r_info, char *header_buf) {
-
+/*
+ * handle_connection Start fetching from server and forward to clients.
+ * Attmpt to save objects to cache
+ *
+ */
+void handle_connection(int connfd, struct request_info *r_info
+        , char *header_buf) 
+{
     /* make request */
     int clientfd;
     int byte_count;
     char *host, *uri, *port, buf[MAXLINE], out_buf[MAXLINE];
     rio_t rio;
 
+    /* Start sending request to server */
+
     debugprintf("start connection\n");
     host = r_info->hostname;
     debugprintf("host:%s\n", host);
     uri = r_info->uri;
     debugprintf("port: %s\n", r_info->port);
+    /* if port is empty set it 80 */
     port = ( (r_info->port)[0] == '\0' ? "80": r_info->port);
 
-    /* Init client fd towards server */
     debugprintf("start clientfd\n");
-
     clientfd = Open_clientfd(host, port);
     Rio_readinitb(&rio, clientfd);
 
     /* Initiate header info */
+    /* Compose headers according to cases */
     sprintf(buf, "%s %s %s\r\n", "GET", uri, "HTTP/1.0");
-
-    if ((r_info->port)[0] == '\0') {
+    if ((r_info->port)[0] == '\0') 
         sprintf(buf, "%sHost: %s\r\n", buf, host);
-    }
-    else {
+    else 
         sprintf(buf, "%sHost: %s:%s\r\n", buf, host, port);
-    }
-    //sprintf(buf, "%s%s\r\n", buf, user_agent_hdr);
+
+    /* Append client's request header to buf */
     sprintf(buf, "%s%s\r\n", buf, header_buf);
-    printf("-----------------print headers:\n%s", buf);
+
+    debugprintf("-----------------print headers:\n%s", buf);
 
     if (rio_writen(clientfd, buf, strlen(buf)) < 0) {
         if (errno == EPIPE) {
@@ -161,13 +173,14 @@ void handle_connection(int connfd, struct request_info *r_info, char *header_buf
             return;
         }
     }
+    /* End sending request */
 
-    /* Start read and forward */
-    debugprintf("--------------start read--------------\n");
+
+    /* Start forwarding response header */
+    debugprintf("-----start read-------\n");
 
     Rio_readlineb(&rio, buf, MAXLINE);
     while (strcmp(buf, "\r\n")) {
-        //sprintf(out_buf, "%s%s", out_buf, buf);
         if (rio_writen(connfd, buf, strlen(buf)) < 0) {
             if (errno == EPIPE) {
                 Close(clientfd);
@@ -177,21 +190,24 @@ void handle_connection(int connfd, struct request_info *r_info, char *header_buf
         printf("%s", buf);
         Rio_readlineb(&rio, buf,MAXLINE);
     }
-
+    /* Write \r\n to end header text */
     sprintf(buf, "\r\n");
-   // Rio_writen(connfd, buf, strlen(buf));
+
+    /* Write to client */
     if (rio_writen(connfd, buf, strlen(buf)) < 0) {
         if (errno == EPIPE) {
             Close(clientfd);
             return;
         }
     }
+    /* End forwarding response header*/
     
+
+    /* Write response body to client */
     while (1) { 
         byte_count = Rio_readnb(&rio, buf, MAXLINE);
-        if (byte_count == 0) {
-            break;
-        }
+        if (byte_count == 0) //finish reading
+            break; 
 
         if (rio_writen(connfd, buf, byte_count) < 0) {
             if (errno == EPIPE) {
@@ -200,11 +216,19 @@ void handle_connection(int connfd, struct request_info *r_info, char *header_buf
             return;
         }
     }
+    /* End write response body to client */
+
     Close(clientfd);
     return;
 }
 
 
+/*
+ * is_valid - A validation and parser for requests.
+ * It checks if request are valid using sscanf and parse infos
+ * to a request_info struct
+ *
+ */
 int is_valid(int fd, char *method, char *url, char *version, struct request_info *r_info) {
     char hostname[100];
     char port[20] = "";
@@ -215,6 +239,7 @@ int is_valid(int fd, char *method, char *url, char *version, struct request_info
 
     debugprintf("%s\n", url);
 
+    /* Check request */
     if (strcasecmp(method, "GET")) {
         clienterror(fd, method, "501", "Not Supported method"
         , "Proxy does not support this method");
@@ -228,9 +253,7 @@ int is_valid(int fd, char *method, char *url, char *version, struct request_info
         return 0;
     }
 
-
-        printf("before:%s\n", port);
-
+    /* Match and parse request URL */
     if (sscanf(url, "http://%99[^:]:%20[^/]/%199s", hostname, port, uri_tmp) == 3)
     {
         debugprintf("case 1");
@@ -253,14 +276,15 @@ int is_valid(int fd, char *method, char *url, char *version, struct request_info
     }
     /* extreme case */
     else if ( (robust_case = sscanf(url, "%99[^/]/%199s", hostname, uri_tmp)) > 0) {
-            if (robust_case == 1) {
-                /* set it as empty */
-                uri_tmp[0] = '\0';                
-            }
+        if (robust_case == 1) {
+            /* set it as empty */
+            uri_tmp[0] = '\0';                
+        }
         valid_flag = 1;
     }
 
 
+    /* Save infos into a request_info struct*/
     if (valid_flag) {
         debugprintf("method: %s \n verision: %s\n", method, version);
         r_info->port = strdup(port);
@@ -285,8 +309,13 @@ int is_valid(int fd, char *method, char *url, char *version, struct request_info
 }
 
 
+/*
+ * Reply a error messgage to client. 
+ * Ususally it won't work
+ * 
+ */
 void clienterror(int fd, char *cause, char *errnum,
-		 char *shortmsg, char *longmsg)
+        char *shortmsg, char *longmsg)
 {
     char buf[MAXLINE], body[MAXBUF];
     Rio_writen(fd, buf, strlen(buf));    Rio_writen(fd, buf, strlen(buf));
@@ -311,6 +340,7 @@ void clienterror(int fd, char *cause, char *errnum,
 
 /*
  * read_requesthdrs - read HTTP request headers
+ * and save it into a buffer to be forwarded to client.
  */
 /* $begin read_requesthdrs */
 void read_requesthdrs(rio_t *rp, char *header_buf)
@@ -319,14 +349,16 @@ void read_requesthdrs(rio_t *rp, char *header_buf)
     int read_count;
 
     read_count = Rio_readlineb(rp, buf, MAXLINE);
+
     while (strcmp(buf, "\r\n") && read_count > 0) {
-            GOTCHA;
+        /* We will overwrite these header infos */
         if (strstr(buf, "Connection:") || strstr(buf, "Proxy-Connection") 
                 || strstr(buf, "User-Agent") || strstr(buf, "Host:")) 
         {
             //Do nothing
         }
         else {
+            /* readlineb reads \r\n too */
             sprintf(header_buf, "%s%s", header_buf, buf); 
         }
         read_count = Rio_readlineb(rp, buf, MAXLINE);
