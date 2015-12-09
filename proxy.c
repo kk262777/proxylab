@@ -16,7 +16,7 @@ typedef struct request_info {
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
 //volatile file?
-void doit(int fd);
+void *doit(void* connfd_ptr);
 int parse_uri(char *uri, char *filename, char *cgiargs);
 void clienterror(int fd, char *cause, char *errnum,
 char *shortmsg, char *longmsg);
@@ -31,6 +31,8 @@ int main(int argc, char **argv)
 {
     /* variables */
     int listenfd, connfd;
+    int *connfd_ptr;
+    pthread_t tid;
     char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
@@ -46,17 +48,28 @@ int main(int argc, char **argv)
     while(1) {
         clientlen = sizeof(clientaddr)  ;
         connfd = Accept(listenfd, (SA *) &clientaddr, &clientlen);
-        Getnameinfo((SA *) &clientaddr, clientlen, hostname,
-        MAXLINE, port, MAXLINE, 0);
-        printf("Accepted connection: (%s, %s)\n", hostname, port);
-        doit(connfd);
-        Close(connfd);
+
+        /* parse arguments */
+        connfd_ptr = malloc(sizeof(void *)); 
+        *connfd_ptr = connfd;
+        Pthread_create(&tid, NULL, doit, connfd_ptr);
+        //Getnameinfo((SA *) &clientaddr, clientlen, hostname,MAXLINE, port, MAXLINE, 0);
+        //printf("Accepted connection: (%s, %s)\n", hostname, port);
+        //doit(connfd);
+        //Close(connfd);
     }
 
 /*    printf("%s", user_agent_hdr);*/
 }
 
-void doit(int fd) {
+void *doit(void *connfd_ptr) {
+
+    Pthread_detach(Pthread_self());
+    debugprintf("\n---------New thread run\n");
+    int fd = *(int *) connfd_ptr;
+    Free(connfd_ptr);
+
+    
     size_t n;
     char buf[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE];
     char read_buf;
@@ -69,18 +82,18 @@ void doit(int fd) {
     Rio_readinitb(&rio, fd);
     /*Read one line*/
     if (!Rio_readlineb(&rio, buf, MAXLINE))
-        return;
+        return NULL;
 
     printf("%s", buf);
     read_requesthdrs(&rio);
     if (sscanf(buf, "%s %s %s", method, url, version) != 3) {
         printf("%s\n", "Not 3 request");
-        return;
+        return NULL;
     }
 
     if (!is_valid(fd, method, url, version, r_info)) {
         printf("%s\n", "invalid request");
-        return;
+        return NULL;
     }
     else {
         printf("%s\n", "valid reqeust!");
@@ -89,7 +102,11 @@ void doit(int fd) {
     /* suppose valid here */
     /* make request */
     handle_connection(fd, r_info);
+    Free(r_info);
+    Close(fd);
+    Pthread_exit(NULL);
 
+    return NULL;
     /* make response */
 }
 
