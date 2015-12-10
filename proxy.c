@@ -13,12 +13,11 @@ typedef struct request_info {
     char *uri;
 } request_info;
 
-struct cache_node cache_head;
-struct cache_node cache_tail;
+struct cache_entry *entry;
+struct cache_node *cache_head;
+struct cache_node *cache_tail;
 /* You won't lose style points for including this long line in your code */
-static const char *user_agent_hdr = 
-    "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) \
-        Gecko/20120305 Firefox/10.0.3\r\n";
+static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
 //volatile file?
 void *doit(void* connfd_ptr);
@@ -26,7 +25,8 @@ int parse_uri(char *uri, char *filename, char *cgiargs);
 void clienterror(int fd, char *cause, char *errnum,
 char *shortmsg, char *longmsg);
 void read_requesthdrs(rio_t *rp, char *header_buf);
-int is_valid(int fd, char *method, char *url, char *version, struct request_info *r_info);
+int is_valid(int fd, char *method, char *url,
+        char *version, struct request_info *r_info);
 void handle_connection(int fd, struct request_info *r_info, char *header_buf);
 #define debugprintf  printf
 //void debugprintf();
@@ -49,6 +49,8 @@ int main(int argc, char **argv)
     }
     /* Block SIGPIPE signal*/
     Signal(SIGPIPE, SIG_IGN);
+//TODO    init_cache(); 
+//TODO init lock 
 
     /* Client length */
     listenfd = Open_listenfd(argv[1]);
@@ -85,6 +87,7 @@ void *doit(void *connfd_ptr) {
     rio_t rio;
     request_info* r_info;
 
+    init_cache();
     r_info = malloc(sizeof(request_info));
 
     /* Accept each request */
@@ -122,14 +125,44 @@ void *doit(void *connfd_ptr) {
         printf("%s\n", "valid reqeust!");
     }
 
+    /* Cache routine */
+
+
+    /* If not handle connection */
+
     /* Talk to server routine */
     handle_connection(fd, r_info, header_buf);
+
     Free(r_info);
     Close(fd);
     //Pthread_exit(NULL);
 
     return NULL;
 }
+
+
+/*
+ * forward_cache - try to find and forward cache to client.
+ *  
+ *  
+ * return NO_FOUND if no cache available
+ */
+int forward_cache(int fd, struct request_info *r_info, char *header_buf) {
+    
+    struct cache_node *result_cache;
+    /* Read infos: hostname, uri */
+    /* Find cache according to cache info */
+    //lock
+        /* if cache is not found, return NO_FOUND */
+        //unlock
+    /* Start read and forward cache header and content*/
+
+    //unlock
+
+    return 0;
+
+}
+
 
 /*
  * handle_connection Start fetching from server and forward to clients.
@@ -140,10 +173,10 @@ void handle_connection(int connfd, struct request_info *r_info
         , char *header_buf) 
 {
     /* make request */
-    int clientfd;
-    int byte_count;
-    char *host, *uri, *port, buf[MAXLINE], out_buf[MAXLINE];
+    int clientfd, size_exceed_flag, byte_count, object_total_byte_count;
+    char *host, *uri, *port, buf[MAXLINE], cache_buf[MAX_OBJECT_SIZE];
     rio_t rio;
+    struct cache_node *new_cache;
 
     /* Start sending request to server */
 
@@ -159,6 +192,8 @@ void handle_connection(int connfd, struct request_info *r_info
     clientfd = Open_clientfd(host, port);
     Rio_readinitb(&rio, clientfd);
 
+    //create cacche
+    
     /* Initiate header info */
     /* Compose headers according to cases */
     sprintf(buf, "%s %s %s\r\n", "GET", uri, "HTTP/1.0");
@@ -181,25 +216,25 @@ void handle_connection(int connfd, struct request_info *r_info
     /* End sending request */
 
 
+
     /* Start forwarding response header */
     debugprintf("-----start read-------\n");
 
+    // save cache header
     Rio_readlineb(&rio, buf, MAXLINE);
     while (strcmp(buf, "\r\n")) {
-        if (rio_writen(connfd, buf, strlen(buf)) < 0) {
-            if (errno == EPIPE) {
-                Close(clientfd);
-                return;
-            }
-        }
+        /* write buf into another buf */
+        sprintf(cache_buf, "%s%s", cache_buf, buf);
         printf("%s", buf);
         Rio_readlineb(&rio, buf,MAXLINE);
     }
     /* Write \r\n to end header text */
-    sprintf(buf, "\r\n");
+    sprintf(cache_buf, "%s\r\n", cache_buf);
+
+    //TODO save to cache
 
     /* Write to client */
-    if (rio_writen(connfd, buf, strlen(buf)) < 0) {
+    if (rio_writen(connfd, cache_buf, strlen(cache_buf)) < 0) {
         if (errno == EPIPE) {
             Close(clientfd);
             return;
@@ -209,14 +244,31 @@ void handle_connection(int connfd, struct request_info *r_info
     
 
     /* Write response body to client */
+    object_total_byte_count = 0;
+    cache_buf[0] = '\0'; 
+    size_exceed_flag = 0;
+    if (strlen(cache_buf) != 0) 
+        unix_error("NULL terminated should work right?\n");
+
     while (1) { 
         byte_count = Rio_readnb(&rio, buf, MAXLINE);
+        object_total_byte_count += byte_count;
+        if (size_exceed_flag || object_total_byte_count > MAX_OBJECT_SIZE) {
+            /* discard cache*/
+            size_exceed_flag = 1;
+        }
+        else {
+            sprintf(cache_buf, "%s%s", cache_buf, buf);
+        }
+
+
         if (byte_count == 0) //finish reading
             break; 
 
         if (rio_writen(connfd, buf, byte_count) < 0) {
             if (errno == EPIPE) {
                 Close(clientfd);
+                //TODO free cache_node
             }
             return;
         }
@@ -224,6 +276,19 @@ void handle_connection(int connfd, struct request_info *r_info
     /* End write response body to client */
 
     Close(clientfd);
+
+    /* If not exceed */
+
+
+    /* if block size */
+    /* read lock*/
+    /* if not exceed, save cache to the list*/
+        /* if exceed LRU */
+
+    /* write lock*/
+
+    /* write unlock*/
+    /* read unlock*/
     return;
 }
 
@@ -234,7 +299,9 @@ void handle_connection(int connfd, struct request_info *r_info
  * to a request_info struct
  *
  */
-int is_valid(int fd, char *method, char *url, char *version, struct request_info *r_info) {
+int is_valid(int fd, char *method, char *url, 
+        char *version, struct request_info *r_info) 
+{
     char hostname[100];
     char port[20] = "";
     char uri[200];
@@ -259,35 +326,42 @@ int is_valid(int fd, char *method, char *url, char *version, struct request_info
     }
 
     /* Match and parse request URL */
-    if (sscanf(url, "http://%99[^:]:%20[^/]/%199s", hostname, port, uri_tmp) == 3)
+    if (sscanf(url, "http://%99[^:]:%20[^/]/%199s", 
+                hostname, port, uri_tmp) == 3)
     {
         debugprintf("case 1");
         valid_flag = 1;
     }
-    /* http://fonts.googleapis.com/css?family=Open+Sans:400italic,700italic,800italic,700,800,400*/
-    else if (sscanf(url, "http://%99[^/]/%199s", hostname, uri_tmp) == 2) {
+    else if (sscanf(url, "http://%99[^/]/%199s",
+                hostname, uri_tmp) == 2) 
+    {
         debugprintf("case 2");
         printf("%s\n", port);
         port[0] = '\0'; 
         valid_flag = 1;
     }
-    else if ((sscanf(url, "http://%99[^:]:%20[^/]/", hostname, port ) == 2)) {
+    else if ((sscanf(url, "http://%99[^:]:%20[^/]/",
+                hostname, port ) == 2)) 
+    {
         valid_flag = 1;
         debugprintf("case 3");
     }
-    else if (sscanf(url, "http://%99[^/]/", hostname) == 1) {
+    else if (sscanf(url, "http://%99[^/]/",
+                hostname) == 1) 
+    {
         debugprintf("case 4");
         valid_flag = 1;
     }
     /* extreme case */
-    else if ( (robust_case = sscanf(url, "%99[^/]/%199s", hostname, uri_tmp)) > 0) {
+    else if ((robust_case = sscanf(url, "%99[^/]/%199s", 
+                    hostname, uri_tmp)) > 0) 
+    {
         if (robust_case == 1) {
             /* set it as empty */
             uri_tmp[0] = '\0';                
         }
         valid_flag = 1;
     }
-
 
     /* Save infos into a request_info struct*/
     if (valid_flag) {

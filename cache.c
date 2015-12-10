@@ -6,7 +6,7 @@ extern struct cache_node *cache_tail;
 extern struct cache_entry *entry;
 
 void init_cache() {
-    //init cache   
+    //init cache
     entry = (struct cache_entry*)Calloc(1, sizeof(struct cache_entry));
     entry->available_size = MAX_CACHE_SIZE;
     cache_tail = NULL;
@@ -26,10 +26,10 @@ int check_available(size_t size_needed) {
 }
 
 
-int search_cache(char *search_hostname, char *search_uri, 
-        size_t search_size, struct cache_node **cache_ptr) 
+int search_cache(char *search_hostname, char *search_uri,
+         struct cache_node **cache_ptr)
 {
-    if (cache_head == NULL) 
+    if (cache_head == NULL)
         return EMPTY_CACHE;
 
     struct cache_node *search_cache = cache_head->next;
@@ -41,9 +41,9 @@ int search_cache(char *search_hostname, char *search_uri,
                 return FOUND;
             }
         }
-        search_cache = search_cache->next;            
+        search_cache = search_cache->next;
     }
-    
+
     printf("failed find cache\n");
     return NO_FOUND;
 }
@@ -54,17 +54,17 @@ int search_cache(char *search_hostname, char *search_uri,
  *
  */
 struct cache_node* create_node(char *hostname, char *uri,
-        size_t object_size, char *object_buf) 
+        size_t object_size, char *object_buf)
 {
     /* Malloc a char array big enough*/
     char *cache_content = (char *)malloc(object_size);
     struct cache_node *new_cache_node = malloc(sizeof(struct cache_node));
-    new_cache_node->hostname = hostname; 
+    new_cache_node->hostname = hostname;
     new_cache_node->uri = uri;
     new_cache_node->block_size = object_size;
     new_cache_node->content = cache_content;
     return new_cache_node;
-} 
+}
 
 
 /*
@@ -74,7 +74,7 @@ struct cache_node* create_node(char *hostname, char *uri,
  */
 void insert_node(struct cache_node *new_node) {
     /* Insert to head, neck used to be the first node*/
-    struct cache_node *neck = entry->next; 
+    struct cache_node *neck = entry->next;
     if (neck != NULL ) {
         neck->prev = new_node;
         new_node->next = neck;
@@ -142,7 +142,7 @@ void delete_node(struct cache_node *delete_node) {
 
 void evict_LRU(size_t size_needed) {
     /* Calculate gap */
-    if (size_needed < entry->available_size) 
+    if (size_needed < entry->available_size)
         unix_error("size_needed < available_size\n");
     size_t gap = size_needed - entry->available_size;
 
@@ -155,10 +155,9 @@ void evict_LRU(size_t size_needed) {
         delete_node(cache_tail);
         total_evicted_size += evicted_size;
     }
-       
-    if (size_needed > entry->available_size) 
+
+    if (size_needed > entry->available_size)
         unix_error("evict fail, please check\n");
 
 
 }
-

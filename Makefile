@@ -9,19 +9,19 @@ CC = gcc
 CFLAGS = -g -Wall
 LDFLAGS = -lpthread
 
-all: proxy echoclient
+all: proxy 
 
 csapp.o: csapp.c csapp.h
 	$(CC) $(CFLAGS) -c csapp.c
 
-proxy.o: proxy.c csapp.h
+cache.o: cache.h cache.c
+	$(CC) $(CFLAGS) -c cache.c
+
+proxy.o: proxy.c csapp.h cache.h
 	$(CC) $(CFLAGS) -c proxy.c
 
-echoclient.o: echoclient.c csapp.h
-	$(CC) $(CFLAGS) -c echoclient.c
-
-proxy: proxy.o csapp.o
-echoclient: echoclient.o csapp.o
+proxy: proxy.o csapp.o cache.o
+#echoclient: echoclient.o csapp.o
 
 # Creates a tarball in ../proxylab-handin.tar that you should then
 # hand in to Autolab. DO NOT MODIFY THIS!
