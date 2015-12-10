@@ -16,7 +16,9 @@ typedef struct request_info {
 struct cache_node cache_head;
 struct cache_node cache_tail;
 /* You won't lose style points for including this long line in your code */
-static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+static const char *user_agent_hdr = 
+    "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) \
+        Gecko/20120305 Firefox/10.0.3\r\n";
 
 //volatile file?
 void *doit(void* connfd_ptr);
