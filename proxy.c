@@ -193,7 +193,6 @@ int forward_cache(int fd, struct request_info *r_info, char *header_buf) {
     /* Start read and forward cache header and content*/
     if (rc == FOUND) {
         debugprintf("--------------------FORWARD CACHE HDR BEGIN--------\n");
-
         /* Forward headers */
         if (rio_writen(fd, result_cache->header,
                     strlen(result_cache->header)) < 0)
