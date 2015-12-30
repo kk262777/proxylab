@@ -96,17 +96,16 @@ int main(int argc, char **argv)
  */
 void *doit(void *connfd_ptr) {
     int fd = *(int *) connfd_ptr;
-    int rc;
     Pthread_detach(Pthread_self());
     Free(connfd_ptr);
-    debugprintf("\n---------New thread run\n");
-
+    int rc;
     char buf[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE];
     char header_buf[MAXLINE];
     rio_t rio;
     request_info* r_info;
 
     r_info = Malloc(sizeof(request_info));
+    debugprintf("\n---------New thread run\n");
 
     /* Accept each request */
     Rio_readinitb(&rio, fd);
@@ -138,7 +137,7 @@ void *doit(void *connfd_ptr) {
         return NULL;
     }
     else {
-        debugprintf("%s\n", "valid reqeust!");
+        debugprintf("%s\n", "Valid reqeust!");
     }
 
     /* Cache routine, find and forward */
@@ -185,7 +184,7 @@ int forward_cache(int fd, struct request_info *r_info, char *header_buf) {
 
     /* if cache is not found, return NO_FOUND */
     if (rc == NO_FOUND || rc == EMPTY_CACHE) {
-        debugprintf("---NO _ FOUND----\n");
+        debugprintf("---NO_CACHE_FOUND----\n");
         pthread_rwlock_unlock(&cache_rwlock);
         return NO_FOUND;
     }
@@ -193,7 +192,6 @@ int forward_cache(int fd, struct request_info *r_info, char *header_buf) {
     /* Start read and forward cache header and content*/
     if (rc == FOUND) {
         debugprintf("--------------------FORWARD CACHE HDR BEGIN--------\n");
-        //printf("result cache: header:\n %s\n", result_cache->header);
         /* Forward headers */
         if (rio_writen(fd, result_cache->header,
                     strlen(result_cache->header)) < 0)
@@ -210,7 +208,7 @@ int forward_cache(int fd, struct request_info *r_info, char *header_buf) {
         debugprintf("%s: %lu\n","block_size", result_cache->block_size );
         if (rio_writen(fd, result_cache->content,
                     result_cache->block_size) < 0)
-        {
+	{
             if (errno == EPIPE) {
                 pthread_rwlock_unlock(&cache_rwlock);
                 return RIO_ERROR;
@@ -432,7 +430,6 @@ int is_valid(int fd, char *method, char *url,
                 hostname, uri_tmp) == 2)
     {
         debugprintf("case 2");
-//        printf("%s\n", port);
         port[0] = '\0';
         valid_flag = 1;
     }
@@ -506,11 +503,8 @@ void clienterror(int fd, char *cause, char *errnum,
     sprintf(body, "%s<hr><em>The Tiny Proxy</em>\r\n", body);
 
     /* Print the HTTP response */
-    //sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
     sprintf(buf, "HTTP/1.0 %s %s\r\n", "200", "OK");
-    //rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "%sContent-type: text/html\r\n", buf);
-    //rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "%sContent-length: %d\r\n\r\n", buf, (int)strlen(body));
     if (rio_writen(fd, buf, strlen(buf)) < 0) {
         if (errno == EPIPE) {
@@ -573,14 +567,16 @@ void read_requesthdrs(rio_t *rp, char *header_buf)
 
 /*
  * handle_hostname - A helper function to concatenate hostname
- *
+ * Check if port is empty. If empty, save hostname only.
+ * If not empty, join the hostname and port with ':'
  */
 void handle_hostname(char* host, char* port, char* result) {
     size_t needed;
+    /* If port is empty, save hostname without port */
     if ((port)[0] == '\0')
-        strcpy(result, host);
+	strcpy(result, host);
     else  {
-        //sprintf(buf, "%sHost: %s:%s\r\n", buf, host, port);
+	/* Calculate needed size */
         needed = snprintf(NULL, 0, "%s:%s", host, port);
         char buf[needed];
         snprintf(buf, needed + 1, "%s:%s", host, port);
