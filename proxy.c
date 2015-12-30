@@ -46,11 +46,11 @@ void handle_connection(int fd, struct request_info *r_info, char *header_buf);
 int forward_cache(int fd, struct request_info *r_info, char *header_buf) ;
 void handle_hostname(char* host, char* port, char* result);
 void free_r_info(struct request_info *r_info);
-//#ifndef debugprintf
-//#define debugprintf  printf
-void debugprintf();
-//#define GOTCHA printf("GOTCHA!\n");
-//#endif
+#ifndef debugprintf
+#define debugprintf  printf
+//void debugprintf();
+#define GOTCHA printf("GOTCHA!\n");
+#endif
 
 int main(int argc, char **argv)
 {
@@ -59,7 +59,6 @@ int main(int argc, char **argv)
     int *connfd_ptr;
     int rc;
     pthread_t tid;
-    //char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
 
@@ -82,7 +81,7 @@ int main(int argc, char **argv)
         connfd = Accept(listenfd, (SA *) &clientaddr, &clientlen);
 
         /* Parse connection's fd to threads */
-        connfd_ptr = malloc(sizeof(void *));
+        connfd_ptr = Malloc(sizeof(void *));
         *connfd_ptr = connfd;
         Pthread_create(&tid, NULL, doit, connfd_ptr);
     }
@@ -107,7 +106,7 @@ void *doit(void *connfd_ptr) {
     rio_t rio;
     request_info* r_info;
 
-    r_info = malloc(sizeof(request_info));
+    r_info = Malloc(sizeof(request_info));
 
     /* Accept each request */
     Rio_readinitb(&rio, fd);
@@ -134,8 +133,6 @@ void *doit(void *connfd_ptr) {
     /* Validate request and parse infos */
     if (!is_valid(fd, method, url, version, r_info)) {
         debugprintf("%s\n", "invalid request");
-
-        //free_r_info(r_info);
         Free(r_info);
         Close(fd);
         return NULL;
@@ -211,7 +208,6 @@ int forward_cache(int fd, struct request_info *r_info, char *header_buf) {
         debugprintf("--------------------FORWARD CACHE OBJ BEGIN--------\n");
         /* Forward cache object */
         debugprintf("%s: %lu\n","block_size", result_cache->block_size );
-        debugprintf("%s: %s\n","block_contetn", result_cache->content );
         if (rio_writen(fd, result_cache->content,
                     result_cache->block_size) < 0)
         {
@@ -222,18 +218,17 @@ int forward_cache(int fd, struct request_info *r_info, char *header_buf) {
         }
     }
     /* move node to head */
-
+    //sleep(3);
     pthread_rwlock_unlock(&cache_rwlock);
-    sleep(3);
-
-    pthread_rwlock_wrlock(&cache_rwlock);
-    if (detach_node(result_cache)) {
-        insert_node(result_cache);
+    /* try to acquire a lock */
+    rc = pthread_rwlock_trywrlock(&cache_rwlock);
+    if (!rc) {
+        if (detach_node(result_cache)) {
+            insert_node(result_cache);
+        }
+        /* unlock */
+        pthread_rwlock_unlock(&cache_rwlock);
     }
-    pthread_rwlock_unlock(&cache_rwlock);
-
-    /* unlock */
-
     return 0;
 }
 
@@ -253,9 +248,9 @@ void handle_connection(int connfd, struct request_info *r_info
     rio_t rio;
 
     /* Start sending request to server */
-    debugprintf("start connection\n");
     host = r_info->hostname;
     uri = r_info->uri;
+    debugprintf("start connection\n");
     debugprintf("host:%s\n", host);
 
     /* if port is empty set it 80 (for connection) */
@@ -273,7 +268,6 @@ void handle_connection(int connfd, struct request_info *r_info
     /* Compose headers according to cases */
     sprintf(buf, "%s %s %s\r\n", "GET", uri, "HTTP/1.0");
     sprintf(buf, "%sHost: %s\r\n", buf, hdr_hostname);
-
 
     /* Append client's request header to buf */
     sprintf(buf, "%s%s\r\n", buf, header_buf);
@@ -303,9 +297,11 @@ void handle_connection(int connfd, struct request_info *r_info
                 return;
             }
         }
+        printf("%s\n", buf);
     }
     /* Write \r\n to end header text */
     sprintf(cache_header_buf, "%s\r\n", cache_header_buf);
+    debugprintf("Finish appending header\n");
 
     /* Write to client */
     if (rio_writen(connfd, cache_header_buf, strlen(cache_header_buf)) < 0) {
@@ -315,11 +311,10 @@ void handle_connection(int connfd, struct request_info *r_info
         }
     }
     /* End forwarding response header*/
-
+    debugprintf("Finish forwarding header\n");
 
     /* Write response body to client */
     object_total_byte_count = 0;
-
     size_exceed_flag = 0;
 
     while (1) {
@@ -405,10 +400,10 @@ int is_valid(int fd, char *method, char *url,
 {
     char hostname[100];
     char port[20] = "";
-    char uri[500] = "";
-    char uri_tmp[500] = "";
+    char uri[MAXLINE] = "";
+    char uri_tmp[MAXLINE] = "";
     int valid_flag = 0;
-    int robust_case;
+    //int robust_case;
 
     debugprintf("%s\n", url);
 
@@ -426,14 +421,14 @@ int is_valid(int fd, char *method, char *url,
         return 0;
     }
 
-    /* Match and parse request URL */
-    if (sscanf(url, "http://%99[^:]:%20[^/]/%499s",
+        /* Match and parse request URL */
+    if (sscanf(url, "http://%99[^:]:%20[^/]/%8191s",
                 hostname, port, uri_tmp) == 3)
     {
         debugprintf("case 1");
         valid_flag = 1;
     }
-    else if (sscanf(url, "http://%99[^/]/%499s",
+    else if (sscanf(url, "http://%99[^/]/%8191s",
                 hostname, uri_tmp) == 2)
     {
         debugprintf("case 2");
@@ -453,16 +448,16 @@ int is_valid(int fd, char *method, char *url,
         debugprintf("case 4");
         valid_flag = 1;
     }
-    /* extreme case */
-    else if ((robust_case = sscanf(url, "%99[^/]/%499s",
-                    hostname, uri_tmp)) > 0)
-    {
-        if (robust_case == 1) {
-            /* set it as empty */
-            uri_tmp[0] = '\0';
-        }
-        valid_flag = 1;
-    }
+    // /* extreme case */
+    // else if ((robust_case = sscanf(url, "%99[^/]/%499s",
+    //                 hostname, uri_tmp)) > 0)
+    // {
+    //     if (robust_case == 1) {
+    //         /* set it as empty */
+    //         uri_tmp[0] = '\0';
+    //     }
+    //     valid_flag = 1;
+    // }
 
     /* Save infos into a request_info struct*/
     if (valid_flag) {
@@ -602,4 +597,4 @@ void free_r_info(struct request_info *r_info) {
         Free(r_info->uri);
 }
 
-void debugprintf(){}
+//void debugprintf(){}

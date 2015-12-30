@@ -19,11 +19,11 @@
 #define RIO_ERROR 5
 #endif
 
-//#ifndef debugprintf
-//#define debugprintf printf
-//#define GOTCHA printf("GOTCHA\n")
-//#endif
-void debugprintf();
+#ifndef debugprintf
+#define debugprintf printf
+#define GOTCHA printf("GOTCHA\n")
+#endif
+//void debugprintf();
 
 typedef struct cache_node {
     char *hostname;

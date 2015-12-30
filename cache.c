@@ -11,9 +11,9 @@ extern struct cache_entry *entry;
 
 /* read global variables and initialize them */
 void init_cache() {
-    //init cache
-
-    entry = (struct cache_entry*)Malloc(sizeof(struct cache_entry));
+    /* init cache */
+    entry = (struct cache_entry*) malloc(sizeof(struct cache_entry));
+    
     entry->available_size = MAX_CACHE_SIZE;
     entry->next = NULL;
     cache_tail = NULL;
@@ -26,14 +26,13 @@ void init_cache() {
  * if not return 0
  */
 int check_available(size_t size_needed) {
-        debugprintf("--------------check size available! -------------\n");
+    debugprintf("--------------check size available! -------------\n");
     if (entry->available_size >= size_needed) {
         debugprintf(" good with %lu\n", entry->available_size);
         return 1;
     }
     else {
         debugprintf(" no %lu\n", entry->available_size);
-
         return 0;
     }
 }
@@ -53,9 +52,10 @@ void check_cachelist () {
         ptr = ptr->next;
     }
 }
+
 /*
  * search_cache - check if there are available cache in the list
- * If found, return Found to caller func
+ * If found, return FOUND to caller func
  *
  */
 int search_cache(char *search_hostname, char *search_uri,
@@ -73,15 +73,14 @@ int search_cache(char *search_hostname, char *search_uri,
         /* Check host name and uri */
         if (!strcmp(search_cache->hostname, search_hostname)) {
             if (!strcmp(search_cache->uri, search_uri)){
-                /* If found modify the pointer*/
+                /* If found, modify the pointer*/
+                //debugprintf("cache-found\n");
                 *cache_ptr = search_cache;
-                debugprintf("cache-found\n");
                 return FOUND;
             }
         }
         search_cache = search_cache->next;
     }
-
     debugprintf("failed find cache\n");
     return NO_FOUND;
 }
@@ -95,14 +94,13 @@ struct cache_node* create_node(char *hostname, char *uri,
         size_t object_size, char *object_buf, char* cache_header)
 {
     /* Malloc a char array big enough*/
-    //char *cache_content = (char *)malloc(object_size);
     struct cache_node *new_cache_node = malloc(sizeof(struct cache_node));
     new_cache_node->hostname = strdup(hostname);
     new_cache_node->uri = strdup(uri);
-    new_cache_node->block_size = object_size;
-    new_cache_node->content = calloc(object_size, sizeof(char));
-    memcpy(new_cache_node->content, object_buf, object_size);
     new_cache_node->header = strdup(cache_header);
+    new_cache_node->block_size = object_size;
+    new_cache_node->content = malloc(object_size);
+    memcpy(new_cache_node->content, object_buf, object_size);
     return new_cache_node;
 }
 
@@ -110,7 +108,6 @@ struct cache_node* create_node(char *hostname, char *uri,
 /*
  * insert_node - helper function to insert node to a cache_list
  * Always make it to the head of list
- *
  */
 void insert_node(struct cache_node *new_node) {
     /* Insert to head, neck used to be the first node*/
@@ -133,6 +130,7 @@ void insert_node(struct cache_node *new_node) {
     /* Update cache available size */
     entry->available_size -= new_node->block_size;
 }
+
 
 /*
  * detach_node - unlink node from list, but not delete it.
@@ -191,8 +189,6 @@ void free_node_var(struct cache_node *delete_node) {
 void evict_LRU(size_t size_needed) {
     /* Calculate gap */
     debugprintf("--------------------EVICT!!!!----------\n");
-    //if (size_needed < entry->available_size)
-    //    unix_error("size_needed < available_size\n");
     size_t gap = size_needed - entry->available_size;
 
     /* Evict cache_nodes from tail*/
@@ -204,5 +200,4 @@ void evict_LRU(size_t size_needed) {
         delete_node(cache_tail);
         total_evicted_size += evicted_size;
     }
-
 }
